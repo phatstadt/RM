@@ -4,12 +4,13 @@ import pandas as pd
 import ast
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
-from matplotlib import style
+# from matplotlib import style
 import ph_var as var
 import ph_drawdown as phd
-
-style.use('ggplot')
-
+from matplotlib import pyplot as plt
+import matplotlib.dates as mdates
+plt.style.use('ggplot')
+plt.ion()
 
 @xw.func
 def double_sum(x, y):
@@ -160,6 +161,22 @@ def calcBetas(df):
     regOLS = smf.ols(formula=formula, data=df).fit()
     return regOLS
 
+@xw.sub
+def plot_dd(df, df_field, list, fname):
+
+    plt.plot(df['TRADE_DATE'],df[df_field])
+    for tup in list.itertuples():
+        plt.scatter(df.iloc[tup.maxi_index, df.columns.get_loc('TRADE_DATE')],
+                    df[df.index == tup.maxi_index][df_field], c='r')
+        plt.scatter(df.iloc[tup.mini_index, df.columns.get_loc('TRADE_DATE')],
+                    df[df.index == tup.mini_index][df_field], c='g')
+    plt.title('Drawdown Analysis')
+    plt.xlabel('Date')
+    plt.ylabel(df_field)
+    # plt.show()
+    plt.savefig('d:/Dropbox/Python/PHUtilsPy/pic/'+fname)
+    plt.close()
+    return
 
 
 @xw.sub
@@ -185,7 +202,7 @@ def PHReg():
 
 
     '''factor analysis'''
-    if wb.sheets('main').range('RUN_FACTOR'):
+    if wb.sheets('main').range('RUN_FACTOR').value:
         regOLS = calcBetas(xtail)
         print(regOLS.summary())
         wb.sheets('factor').range(2, 1).value = xtail
@@ -194,7 +211,7 @@ def PHReg():
 
 
     '''VaR analysis'''
-    if wb.sheets('main').range('RUN_VAR'):
+    if wb.sheets('main').range('RUN_VAR').value:
         print(xret.tail(10))
         var.single_asset_var(xret, strEndoBase)
 
@@ -217,24 +234,21 @@ def PHReg():
             print(strCol)
             num += 1
             lili = []
-            incremental = 1
             ddthres = wb.sheets('main').range('DRAWDOWN_THRESHOLD').value
-            phd.drawdown(xret, strCol, lili, incremental, ddthres, bool)
+            duthres = wb.sheets('main').range('DRAWUP_THRESHOLD').value
+            print('top level dd call')
+            print('-----------------')
+            (xl, xh, bool2) = phd.drawdown2(xret, strCol, lili, ddthres, duthres, bool, True)
             lili2.extend(lili)
             print()
-            print(len(lili))
+            # print(len(lili))
             df_ddthreshold = pd.DataFrame(lili,columns=['security', 'maxi_index', 'mini_index', 'maxi_date',
                                              'mini_date', 'maxi_value', 'mini_value', 'pct_chg'])
             df_ddthreshold = df_ddthreshold[['security', 'maxi_index', 'mini_index', 'maxi_date',
                                              'mini_date', 'maxi_value', 'mini_value', 'pct_chg']]
             df_ddthreshold.sort_values(by='pct_chg', inplace=True)
-            wb.sheets(detailsheet).range(1, 1+10*(num-1)).value = df_ddthreshold
-
-            plt2 = xret[strEndoBase].plot(figsize=(20, 10))
-            for tup in df_ddthreshold.itertuples():
-                plt2.scatter(tup.maxi_index, xret[xret.index == tup.maxi_index][strEndoBase], c='r')
-                plt2.scatter(tup.mini_index, xret[xret.index == tup.mini_index][strEndoBase], c='g')
-
+            fname = strCol + '_down_'+ str(ddthres) + '_up_' + str(duthres) + '.png'
+            plot_dd(xret, strCol, df_ddthreshold, fname)
 
     df_ddthreshold2 = pd.DataFrame(lili2, columns=['security', 'maxi_index', 'mini_index', 'maxi_date',
                                              'mini_date', 'maxi_value', 'mini_value', 'pct_chg'])
@@ -244,7 +258,7 @@ def PHReg():
     wb.sheets(sumsheet).range(1, 1).value = df_ddthreshold2
 
     print()
-    print(len(lili2))
+    # print(len(lili2))
 
     '''finish'''
     print()
