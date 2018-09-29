@@ -164,6 +164,8 @@ def calcBetas(df):
 @xw.sub
 def plot_dd(df, df_field, list, fname):
 
+    plt.close()
+    plt.figure(figsize=(11, 8.5))
     plt.plot(df['TRADE_DATE'],df[df_field])
     for tup in list.itertuples():
         plt.scatter(df.iloc[tup.maxi_index, df.columns.get_loc('TRADE_DATE')],
@@ -171,11 +173,11 @@ def plot_dd(df, df_field, list, fname):
         plt.scatter(df.iloc[tup.mini_index, df.columns.get_loc('TRADE_DATE')],
                     df[df.index == tup.mini_index][df_field], c='g')
     plt.title('Drawdown Analysis')
-    plt.xlabel('Date')
     plt.ylabel(df_field)
-    # plt.show()
+    locs, labels = plt.xticks()
+    plt.setp(labels, rotation=45)
     plt.savefig('d:/Dropbox/Python/PHUtilsPy/pic/'+fname)
-    plt.close()
+    plt.show()
     return
 
 
@@ -217,39 +219,34 @@ def PHReg():
 
 
     '''drawdown analysis'''
+    sumsheet = 'ddsum'
     if wb.sheets('main').range('RUN_DRAWDOWN').value:
-        detailsheet = 'drawdown'
-        sumsheet = 'ddsum'
-        bool = True
+        bool_draw = True
     else:
-        bool = False
-        detailsheet = 'drawup'
-        sumsheet = 'dusum'
+        bool_draw = False
 
     lili2 = []
-    num = 0
     for strCol in xret:
         if strCol[:1] == 'x' and strCol[-1:] != 'r':
             print()
             print(strCol)
-            num += 1
             lili = []
-            ddthres = wb.sheets('main').range('DRAWDOWN_THRESHOLD').value
-            duthres = wb.sheets('main').range('DRAWUP_THRESHOLD').value
-            print('top level dd call')
-            print('-----------------')
-            (xl, xh, bool2) = phd.drawdown2(xret, strCol, lili, ddthres, duthres, bool, True)
+            thres = wb.sheets('main').range('DRAWDOWN_THRESHOLD').value
+            revthres = wb.sheets('main').range('DRAWUP_THRESHOLD').value
+            revthres_type = wb.sheets('main').range('RETRACE_THRESHOLD_TYPE').value
+            '''main call - return values unused'''
+            x = phd.drawdown(xret, strCol, lili, thres, revthres, bool_draw, True, True, revthres_type)
             lili2.extend(lili)
             print()
-            # print(len(lili))
             df_ddthreshold = pd.DataFrame(lili,columns=['security', 'maxi_index', 'mini_index', 'maxi_date',
                                              'mini_date', 'maxi_value', 'mini_value', 'pct_chg'])
             df_ddthreshold = df_ddthreshold[['security', 'maxi_index', 'mini_index', 'maxi_date',
                                              'mini_date', 'maxi_value', 'mini_value', 'pct_chg']]
             df_ddthreshold.sort_values(by='pct_chg', inplace=True)
-            fname = strCol + '_down_'+ str(ddthres) + '_up_' + str(duthres) + '.png'
+            fname = strCol + '_down_'+ str(thres) + '_up_' + str(revthres) + '.png'
             plot_dd(xret, strCol, df_ddthreshold, fname)
 
+    '''create aggregate output'''
     df_ddthreshold2 = pd.DataFrame(lili2, columns=['security', 'maxi_index', 'mini_index', 'maxi_date',
                                              'mini_date', 'maxi_value', 'mini_value', 'pct_chg'])
     df_ddthreshold2 = df_ddthreshold2[['security', 'maxi_index', 'mini_index', 'maxi_date',
@@ -258,14 +255,9 @@ def PHReg():
     wb.sheets(sumsheet).range(1, 1).value = df_ddthreshold2
 
     print()
-    # print(len(lili2))
-
-    '''finish'''
-    print()
     print('RUN FINISHED')
     return 1
 
-'''bbbbb'''
 
 if __name__ == '__main__':
     # To run this with the debug server, set UDF_DEBUG_SERVER = True in the xlwings VBA module or in Dropdown menu
