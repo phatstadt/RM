@@ -7,10 +7,7 @@ import statsmodels.formula.api as smf
 # from matplotlib import style
 import ph_var as var
 import ph_drawdown as phd
-from matplotlib import pyplot as plt
-import matplotlib.dates as mdates
-plt.style.use('ggplot')
-plt.ion()
+import ph_plot as phplot
 
 @xw.func
 def double_sum(x, y):
@@ -143,7 +140,6 @@ def adjReturn(dx):
     return df
 
 
-
 @xw.sub
 def calcBetas(df):
     formula = ''
@@ -160,25 +156,6 @@ def calcBetas(df):
     df = sm.add_constant(df)
     regOLS = smf.ols(formula=formula, data=df).fit()
     return regOLS
-
-@xw.sub
-def plot_dd(df, df_field, list, fname):
-
-    plt.close()
-    plt.figure(figsize=(11, 8.5))
-    plt.plot(df['TRADE_DATE'],df[df_field])
-    for tup in list.itertuples():
-        plt.scatter(df.iloc[tup.maxi_index, df.columns.get_loc('TRADE_DATE')],
-                    df[df.index == tup.maxi_index][df_field], c='r')
-        plt.scatter(df.iloc[tup.mini_index, df.columns.get_loc('TRADE_DATE')],
-                    df[df.index == tup.mini_index][df_field], c='g')
-    plt.title('Drawdown Analysis')
-    plt.ylabel(df_field)
-    locs, labels = plt.xticks()
-    plt.setp(labels, rotation=45)
-    plt.savefig('d:/Dropbox/Python/PHUtilsPy/pic/'+fname)
-    plt.show()
-    return
 
 
 @xw.sub
@@ -219,44 +196,49 @@ def PHReg():
 
 
     '''drawdown analysis'''
-    sumsheet = 'ddsum'
     if wb.sheets('main').range('RUN_DRAWDOWN').value:
-        bool_draw = True
-    else:
-        bool_draw = False
+        if wb.sheets('main').range('DRAW_TYPE').value == 'DRAWDOWN':
+            bool_draw = True
+            thres = -abs(wb.sheets('main').range('DRAWDOWN_THRESHOLD').value)
+            revthres = abs(wb.sheets('main').range('DRAWUP_THRESHOLD').value)
+        else:
+            bool_draw = False
+            thres = abs(wb.sheets('main').range('DRAWDOWN_THRESHOLD').value)
+            revthres = -abs(wb.sheets('main').range('DRAWUP_THRESHOLD').value)
 
-    lili2 = []
-    for strCol in xret:
-        if strCol[:1] == 'x' and strCol[-1:] != 'r':
-            print()
-            print(strCol)
-            lili = []
-            thres = wb.sheets('main').range('DRAWDOWN_THRESHOLD').value
-            revthres = wb.sheets('main').range('DRAWUP_THRESHOLD').value
-            revthres_type = wb.sheets('main').range('RETRACE_THRESHOLD_TYPE').value
-            '''main call - return values unused'''
-            x = phd.drawdown(xret, strCol, lili, thres, revthres, bool_draw, True, True, revthres_type)
-            lili2.extend(lili)
-            print()
-            df_ddthreshold = pd.DataFrame(lili,columns=['security', 'maxi_index', 'mini_index', 'maxi_date',
-                                             'mini_date', 'maxi_value', 'mini_value', 'pct_chg'])
-            df_ddthreshold = df_ddthreshold[['security', 'maxi_index', 'mini_index', 'maxi_date',
-                                             'mini_date', 'maxi_value', 'mini_value', 'pct_chg']]
-            df_ddthreshold.sort_values(by='pct_chg', inplace=True)
-            fname = strCol + '_down_'+ str(thres) + '_up_' + str(revthres) + '.png'
-            plot_dd(xret, strCol, df_ddthreshold, fname)
+        revthres_type = wb.sheets('main').range('RETRACE_THRESHOLD_TYPE').value
+        sumsheet = 'ddsum'
+        lili2 = []
 
-    '''create aggregate output'''
-    df_ddthreshold2 = pd.DataFrame(lili2, columns=['security', 'maxi_index', 'mini_index', 'maxi_date',
-                                             'mini_date', 'maxi_value', 'mini_value', 'pct_chg'])
-    df_ddthreshold2 = df_ddthreshold2[['security', 'maxi_index', 'mini_index', 'maxi_date',
-                                     'mini_date', 'maxi_value', 'mini_value', 'pct_chg']]
-    df_ddthreshold2.sort_values(by=['security', 'pct_chg'], inplace=True, ascending=[True, True])
-    wb.sheets(sumsheet).range(1, 1).value = df_ddthreshold2
+        for strCol in xret:
+            if strCol[:1] == 'x' and strCol[-1:] != 'r':
+                print()
+                print(strCol)
+                lili = []
 
-    print()
-    print('RUN FINISHED')
-    return 1
+                '''main call - return values unused'''
+                x = phd.drawdown(xret, strCol, lili, thres, revthres, bool_draw, True, True, revthres_type)
+                lili2.extend(lili)
+                print()
+                df_ddthreshold = pd.DataFrame(lili,columns=['security', 'start_index', 'end_index', 'start_date',
+                                                        'end_date', 'start_value', 'end_value', 'pct_chg'])
+                df_ddthreshold = df_ddthreshold[['security', 'start_index', 'end_index', 'start_date',
+                                                 'end_date', 'start_value', 'end_value', 'pct_chg']]
+                df_ddthreshold.sort_values(by='pct_chg', inplace=True)
+                fname = strCol + '_down_'+ str(thres) + '_up_' + str(revthres) + '.png'
+                phplot.plot_drawdown(xret, strCol, 'TRADE_DATE', df_ddthreshold, fname)
+
+        '''create aggregate output'''
+        df_ddthreshold2 = pd.DataFrame(lili2, columns=['security', 'start_index', 'end_index', 'start_date',
+                                                 'end_date', 'start_value', 'end_value', 'pct_chg'])
+        df_ddthreshold2 = df_ddthreshold2[['security', 'start_index', 'end_index', 'start_date',
+                                            'end_date', 'start_value', 'end_value', 'pct_chg']]
+        df_ddthreshold2.sort_values(by=['security', 'pct_chg'], inplace=True, ascending=[True, True])
+        wb.sheets(sumsheet).range(1, 1).value = df_ddthreshold2
+
+        print()
+        print('RUN FINISHED')
+        return 1
 
 
 if __name__ == '__main__':

@@ -81,7 +81,7 @@ def drawdown(df2, str_field, liste, thres, revthres, run_down, append, testRever
             print("reversal test with sdate = %s ; edate = %s" % (df_current['TRADE_DATE'].iloc[0], df_current['TRADE_DATE'].iloc[-1]))
             list_reversal = []
             if rev_threshold_type == 'REL':
-                revthres2 = revthres * -pct_chg
+                revthres2 = abs(revthres) * -pct_chg
             else:
                 revthres2 = revthres
 
@@ -90,19 +90,19 @@ def drawdown(df2, str_field, liste, thres, revthres, run_down, append, testRever
                 if append:
                     liste.append({
                         'pct_chg': pct_chg,
-                        'maxi_index': prev_first,
-                        'mini_index': prev_last,
-                        'mini_date': df.loc[prev_last, 'TRADE_DATE'],
-                        'maxi_date': df.loc[prev_first, 'TRADE_DATE'],
-                        'mini_value': df.loc[prev_last, str_field],
-                        'maxi_value': df.loc[prev_first, str_field],
+                        'start_index': prev_first,
+                        'end_index': prev_last,
+                        'end_date': df.loc[prev_last, 'TRADE_DATE'],
+                        'start_date': df.loc[prev_first, 'TRADE_DATE'],
+                        'end_value': df.loc[prev_last, str_field],
+                        'start_value': df.loc[prev_first, str_field],
                         'security': str_field,
                     })
                     print("%s = %s found. start = %s end = %s. list size is: %s " % (str_draw, pct_chg,
                         prev_first, prev_last, len(liste)))
 
             else:
-                print("*** Reversal. %s rejected." % str_draw)
+                print("*** Reversal. %s rejected; threshold = %s " % (str_draw, revthres2))
 
                 ''' next need to take left and right split df's '''
                 df_split_before = df_current[df_current.index < xmin].copy()
