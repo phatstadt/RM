@@ -224,6 +224,7 @@ def PHReg():
                                                         'end_date', 'start_value', 'end_value', 'pct_chg'])
                 df_ddthreshold = df_ddthreshold[['security', 'start_index', 'end_index', 'start_date',
                                                  'end_date', 'start_value', 'end_value', 'pct_chg']]
+                df_ddthreshold.drop_duplicates(inplace=True)
                 df_ddthreshold.sort_values(by='pct_chg', inplace=True)
                 fname = strCol + '_down_'+ str(thres) + '_up_' + str(revthres) + '.png'
                 phplot.plot_drawdown(xret, strCol, 'TRADE_DATE', df_ddthreshold, fname)
@@ -233,6 +234,7 @@ def PHReg():
                                                  'end_date', 'start_value', 'end_value', 'pct_chg'])
         df_ddthreshold2 = df_ddthreshold2[['security', 'start_index', 'end_index', 'start_date',
                                             'end_date', 'start_value', 'end_value', 'pct_chg']]
+        df_ddthreshold2.drop_duplicates(inplace=True)
         df_ddthreshold2.sort_values(by=['security', 'pct_chg'], inplace=True, ascending=[True, True])
         wb.sheets(sumsheet).range(1, 1).value = df_ddthreshold2
 
