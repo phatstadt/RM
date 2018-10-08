@@ -7,8 +7,8 @@ from matplotlib import pyplot as plt
 def plot_drawdown(df, df_field, str_axis, list, fname):
 
     df2 = df.dropna(subset=[df_field])
-    #df2 = df2.iloc[0:100]
-
+    '''truncate data set to test chart speed'''
+    #df2 = df2.iloc[0:5000]
     plt.close()
     fig = plt.figure(figsize=(11, 8.5))
     ax = fig.add_subplot(111)
@@ -21,12 +21,9 @@ def plot_drawdown(df, df_field, str_axis, list, fname):
                         df2[df2.index == tup.end_index][df_field], c='g')
 
     ax.set(title='Drawdown Analysis', xlabel='Date', ylabel=df_field)
-
-
-    ax.set_xticks(ax.get_xticks()[::10])
-    #ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
-
-    #plt.tight_layout()
-    #plt.savefig('d:/Dropbox/Python/PHUtilsPy/pic/' + fname)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(20))
+    locs, labels = plt.xticks()
+    plt.setp(labels, rotation=45)
+    plt.savefig('d:/Dropbox/Python/PHUtilsPy/pic/' + fname)
     plt.show()
     return
