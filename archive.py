@@ -160,3 +160,32 @@ def drawdown2(df2, strField, liste, dthres, revthres, run_down, append, testReve
 
 
         return (prevmini, prevmaxi, True)
+
+def check_static_data(df2, col_str):
+    df = df2.copy()
+    colonne = col_str
+    n = 30 #cb de ligne consecutives
+    df['block'] = (df[colonne].shift(1) != df[colonne]).astype(int).cumsum()
+    df_temp = df.block.value_counts()
+    df_temp = df_temp[df_temp >= n]
+    #dans df_temp tu as l'indice du block ayant plus ou égal "n" même valeurs et leur
+    #vraie taille
+
+    df.loc[df['block'].isin(df_temp.index.unique()) ,'plus_que_%s' % str(n)] = True
+    df.loc[~df['block'].isin(df_temp.index.unique()) ,'plus_que_%s' % str(n)] = False
+
+    #Si tu veux garder le premier
+    if True: #(bool True, on rentre dans if)
+        df['premier'] = df.duplicated(subset=[colonne,'block'],keep='first')
+    #Si tu veux garder le dernier (bool False, on rentre pas dans if)
+    if False:
+        df['dernier'] = df.duplicated(subset=[colonne,'block'],keep='last')
+
+    #Si tu veux en garder aucun (ça m'étonnerai) (bool False, on rentre pas dans if)
+    if False:
+        df['dernier'] = df.duplicated(subset=[colonne,'block'],keep=False)
+
+    #df2 ce sera df sans les repetitions a plus de "n" tout en gardant la premiere ligne
+    df2 = df[~((df['plus_que_%s' % str(n)] == True) & (df['premier'] == True))]
+
+    print()

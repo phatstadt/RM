@@ -24,10 +24,8 @@ def subTest():
 def getSecRefDB():
     """Reads SecRefDB from Access"""
     secRefDF = phconn.connect(db_name, 'SELECT * from SecRefDB')
-    print(secRefDF.info())
     if __name__ != '__main__':
         wb = xw.Book.caller()
-
         if wb.sheets('main').range('LOAD_SEC_REF_DB').value:
             dbSummary = genDBSummary(secRefDF)
             del dbSummary['START_DATE'], dbSummary['END_DATE'], dbSummary['PROCESSED'], dbSummary['PX_LAST_min'], \
@@ -36,6 +34,7 @@ def getSecRefDB():
             wb.sheets('main').range('N_SEC_REF_ROWS').value = dbSummary.shape[0]
             wb.sheets('main').range('N_SEC_REF_COLS').value = dbSummary.shape[1]
             print()
+
     return secRefDF
 
 @xw.sub
@@ -50,18 +49,25 @@ def genDBSummary(sRefDF):
                 AND (T1.TRADE_DATE = T2.MAX_DATE OR T1.TRADE_DATE = T2.MIN_DATE)
                 ORDER BY PH_SEC_ID, TRADE_DATE;"""
     secDF = phconn.connect(db_name, strSQL)
-    secDF.sort_values(['PH_SEC_ID','TRADE_DATE'], ascending=[True,True], inplace=True)
+    secDF.drop_duplicates(inplace=True)
+    secDF.sort_values(['PH_SEC_ID', 'TRADE_DATE'], ascending=[True,True], inplace=True)
     TrueFalse = []
     for t in range(0, len(secDF.PH_SEC_ID.unique())):
         TrueFalse.extend([True, False])
+
+    if (len(secDF) != len(TrueFalse)):
+        print('Error in genDBSummary. One data point has only one value')
+        return
 
     secDF['TF'] = TrueFalse
     DF_min = secDF[secDF.TF == True].rename(columns={'TRADE_DATE': 'DATE_MIN', 'PX_LAST': 'PX_LAST_min'})
     DF_max = secDF[secDF.TF == False].rename(columns={'TRADE_DATE': 'DATE_MAX', 'PX_LAST': 'PX_LAST_max'})
     df2 = DF_min.merge(DF_max, on='PH_SEC_ID', how='left')
     DF_merger = sRefDF.merge(df2, on='PH_SEC_ID', how='outer')
+    DF_merger = DF_merger[DF_merger['PH Type'].notnull()]
     print(DF_merger)
     return DF_merger
+
 
 @xw.sub
 def buildCombinedDF():
@@ -83,9 +89,28 @@ def buildCombinedDF():
     ltksql = ltksql.replace("]", ")")
     strSQL = 'SELECT PH_SEC_ID, TRADE_DATE, PX_LAST FROM SecHistDB WHERE PH_SEC_ID IN ' + ltksql +' AND TRADE_DATE >= #'  + sdate + '# AND TRADE_DATE < #' + edate + '# ORDER BY TRADE_DATE ASC;'
     df = phconn.connect(db_name, strSQL)
+    df2 = one_col_to_many(df)
     df1 = alignDatesinDF(df, ltk_endo, ltk_exo)
-    return df1
+    return (df, df1, df2)
 
+@xw.sub
+def one_col_to_many(df):
+
+    df2 = df.copy()
+    sec_list = df2['PH_SEC_ID'].unique()
+    print(sec_list)
+    i = 0
+    for one_sec in sec_list:
+        if i == 0:
+            df_col = df2[df2['PH_SEC_ID'] == one_sec]
+        else:
+            dftmp = df2[df2['PH_SEC_ID'] == one_sec]
+            df_col = df_col.merge(dftmp, how='outer', left_on='TRADE_DATE', right_on='TRADE_DATE')
+        df_col.rename(columns={'PX_LAST': 'x' + str(one_sec)}, inplace=True)
+        del df_col['PH_SEC_ID']
+        i += 1
+
+    return df_col
 
 @xw.sub
 def alignDatesinDF(df, ltk_endo, ltk_exo):
@@ -98,7 +123,7 @@ def alignDatesinDF(df, ltk_endo, ltk_exo):
     df_endo = df_endo.rename(columns={'PX_LAST': s})
     df_endo.drop(['PH_SEC_ID'], axis=1, inplace=True)
     dataframe_collection = {}
-    i=0
+    i = 0
     for tk in ltk_exo:
         i += 1
         df1 = df[df['PH_SEC_ID'] == tk].reset_index(drop=True)
@@ -119,7 +144,7 @@ def alignDatesinDF(df, ltk_endo, ltk_exo):
     return(df_out)
 
 @xw.sub
-def adjReturn(dx):
+def adjReturn(dx, run_factor):
     global endostr
     df = dx.copy()
     cols = df.columns.tolist()
@@ -129,13 +154,17 @@ def adjReturn(dx):
                 endostr = col + 'r'
             phid = col[1:]
             rec = secRefDF[secRefDF['PH_SEC_ID'] == float(phid)]
-            retlev = rec.iloc[0,rec.columns.get_loc('LEV_RET')]
+            ret_lev = rec.iloc[0,rec.columns.get_loc('LEV_RET')]
+            yield_flag = rec.iloc[0,rec.columns.get_loc('PH_YIELD_FLAG')]
             df[col + 'r'] = df[col].astype('float')
-            if str(retlev) == 'LEVEL':
-                df[col + 'r']= df[col].pct_change()
- #               df.loc[:,col +'r'] *= 100.0
+            if str(ret_lev) == 'LEVEL':
+                if yield_flag:
+                    df[col + 'r'] = df[col].diff()
+                else:
+                    df[col + 'r'] = df[col].pct_change()
 
-    df[endostr + 'minusrf'] = df[endostr] - df['rf']
+    if run_factor:
+        df[endostr + 'minusrf'] = df[endostr] - df['rf']
 
     return df
 
@@ -159,41 +188,107 @@ def calcBetas(df):
 
 
 @xw.sub
-def PHReg():
+def gen_data():
     ''' init '''
     wb = xw.Book.caller()
     pd.options.display.large_repr = 'info'
     pd.options.display.max_rows = 100
     global db_name
     global secRefDF
-    datatail = int(wb.sheets('main').range('TAIL_SIZE').value)
     db_name = 'D:\Dropbox\PH\_Work\Access\MacroData.accdb'
-
 
     '''generate return dataframe'''
     secRefDF = getSecRefDB()
-    x = buildCombinedDF()
-    xret = adjReturn(x)
-    if datatail != -1:
-        xtail = xret.tail(datatail)
-    else:
-        xtail = xret.copy()
+    (raw_df, aligned_df, raw_col_df) = buildCombinedDF()
+    ret_df = adjReturn(aligned_df, wb.sheets('main').range('RUN_FACTOR').value)
+    if wb.sheets('main').range('GET_RAW_DATA').value:
+        wb.sheets('raw_df').range(1,1).value = raw_col_df
+        wb.sheets('aligned_df').range(1, 1).value = aligned_df
+        wb.sheets('ret_df').range(1, 1).value = ret_df
+#    datatail = int(wb.sheets('main').range('TAIL_SIZE').value)
+#    if datatail != -1:
+#        final_df = ret_df.tail(datatail)
+#    else:
+#        final_df = ret_df.copy()
 
+
+    csv_ret_val = wb.sheets('main').range('CSV_RETURN_VAL').value
+    if csv_ret_val == 'RAW':
+        csv_df = raw_col_df
+    elif csv_ret_val == 'ALIGNED':
+        csv_df = aligned_df
+    else:
+        csv_df = ret_df
+
+    fname = wb.sheets('main').range('DATAFRAME_CSV_PATH').value + 'df.csv'
+    csv_df.to_csv(fname)
+
+
+@xw.sub
+def inspect_data():
+
+    '''load df'''
+    wb = xw.Book.caller()
+    fname = wb.sheets('main').range('DATAFRAME_CSV_PATH').value + 'df.csv'
+    df = pd.read_csv(fname, index_col=0)
+
+    '''run full data quality analysis'''
+    if wb.sheets('main').range('INSPECT_CHECK_BAD_DATA').value:
+        check_static_data(df)
+
+    '''analyze one variable'''
+    var_id = wb.sheets('main').range('INSPECTED_VAR_NUM').value
+    lili = []
+    col_str = 'x' + str(int(var_id))
+    phplot.plot_drawdown(df, col_str, 'TRADE_DATE', lili, 'inspect_var')
+
+
+@xw.sub
+def check_static_data(df2):
+    df = df2.copy()
+    wb = xw.Book.caller()
+    n = int(wb.sheets('main').range('BAD_DATA_DAY_COUNT_THRESHOLD').value)
+    fname = wb.sheets('main').range('DATAFRAME_CSV_PATH').value + 'check_data.csv'
+    f = open(fname, 'w')
+
+    for col_str in df.columns:
+        if col_str[0] == 'x':
+            df['block'] = (df[col_str].shift(1) != df[col_str]).astype(int).cumsum()
+            df_temp = df.block.value_counts()
+            df_temp = df_temp[df_temp >= n]
+            df.loc[df['block'].isin(df_temp.index.unique()) ,'plus_que_%s' % str(n)] = True
+            df.loc[~df['block'].isin(df_temp.index.unique()) ,'plus_que_%s' % str(n)] = False
+            f.write("----------------------------------------------------\n")
+            f.write("Var: %s\n" % col_str)
+            for x in df_temp.index:
+                df_rec = df[df['block'] == x]
+                f.write("   Value: %s found %s times\n" % (df_rec.iloc[0][col_str], df_temp[x]))
+                f.write("   start date: %s ; end date: %s\n" % (df_rec.iloc[0]['TRADE_DATE'],df_rec.iloc[-1]['TRADE_DATE']))
+
+    f.close()
+
+@xw.sub
+def analysis_menu():
+
+    '''load df'''
+    wb = xw.Book.caller()
+    fname = wb.sheets('main').range('DATAFRAME_CSV_PATH').value + 'df.csv'
+    final_df = pd.read_csv(fname, index_col=0)
 
     '''factor analysis'''
     if wb.sheets('main').range('RUN_FACTOR').value:
-        regOLS = calcBetas(xtail)
+        regOLS = calcBetas(final_df)
         print(regOLS.summary())
-        wb.sheets('factor').range(2, 1).value = xtail
+        wb.sheets('factor').range(2, 1).value = final_df
         wb.sheets('main').range('PY_REG_OUT').value = regOLS.params
         wb.sheets('main').range('PY_RSQ_OUT').value = regOLS.rsquared
 
-
     '''VaR analysis'''
     if wb.sheets('main').range('RUN_VAR').value:
-        print(xret.tail(10))
-        var.single_asset_var(xret, strEndoBase)
-
+        for str_col in final_df:
+            if str_col[:1] == 'x' and str_col[-1:] != 'r':
+                print(str_col)
+                var.single_asset_var(final_df, str_col)
 
     '''drawdown analysis'''
     if wb.sheets('main').range('RUN_DRAWDOWN').value:
@@ -210,14 +305,14 @@ def PHReg():
         sumsheet = 'ddsum'
         lili2 = []
 
-        for strCol in xret:
+        for strCol in final_df:
             if strCol[:1] == 'x' and strCol[-1:] != 'r':
                 print()
                 print(strCol)
                 lili = []
 
                 '''main call - return values unused'''
-                x = phd.drawdown(xret, strCol, lili, thres, revthres, bool_draw, True, True, revthres_type)
+                x = phd.drawdown(final_df, strCol, lili, thres, revthres, bool_draw, True, True, revthres_type)
                 lili2.extend(lili)
                 print()
                 df_ddthreshold = pd.DataFrame(lili,columns=['security', 'start_index', 'end_index', 'start_date',
@@ -227,7 +322,7 @@ def PHReg():
                 df_ddthreshold.drop_duplicates(inplace=True)
                 df_ddthreshold.sort_values(by='pct_chg', inplace=True)
                 fname = strCol + '_down_'+ str(thres) + '_up_' + str(revthres) + '.png'
-                phplot.plot_drawdown(xret, strCol, 'TRADE_DATE', df_ddthreshold, fname)
+                phplot.plot_drawdown(final_df, strCol, 'TRADE_DATE', df_ddthreshold, fname)
 
         '''create aggregate output'''
         df_ddthreshold2 = pd.DataFrame(lili2, columns=['security', 'start_index', 'end_index', 'start_date',
