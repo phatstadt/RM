@@ -129,3 +129,48 @@ def drawdown(df2, str_field, liste, thres, revthres, run_down, append, testRever
 
 
         return (prev_last, prev_first, True)
+
+def run_drawndown(wb, final_df):
+
+    print('running drawdown analysis')
+    if wb.sheets('main').range('DRAW_TYPE').value == 'DRAWDOWN':
+        bool_draw = True
+        thres = -abs(wb.sheets('main').range('DRAWDOWN_THRESHOLD').value)
+        revthres = abs(wb.sheets('main').range('DRAWUP_THRESHOLD').value)
+    else:
+        bool_draw = False
+        thres = abs(wb.sheets('main').range('DRAWDOWN_THRESHOLD').value)
+        revthres = -abs(wb.sheets('main').range('DRAWUP_THRESHOLD').value)
+
+    revthres_type = wb.sheets('main').range('RETRACE_THRESHOLD_TYPE').value
+    sumsheet = 'ddsum'
+    lili2 = []
+
+    for strCol in final_df:
+        if strCol[:1] == 'x' and strCol[-1:] != 'r':
+            print()
+            print(strCol)
+            lili = []
+
+            '''main call - return values unused'''
+            x = phd.drawdown(final_df, strCol, lili, thres, revthres, bool_draw, True, True, revthres_type)
+            lili2.extend(lili)
+            print()
+            df_ddthreshold = pd.DataFrame(lili, columns=['security', 'start_index', 'end_index', 'start_date',
+                                                         'end_date', 'start_value', 'end_value', 'pct_chg'])
+            df_ddthreshold = df_ddthreshold[['security', 'start_index', 'end_index', 'start_date',
+                                             'end_date', 'start_value', 'end_value', 'pct_chg']]
+            df_ddthreshold.drop_duplicates(inplace=True)
+            df_ddthreshold.sort_values(by='pct_chg', inplace=True)
+            fname = strCol + '_down_' + str(thres) + '_up_' + str(revthres) + '.png'
+            phplot.plot_drawdown(final_df, strCol, 'TRADE_DATE', df_ddthreshold, fname)
+
+    '''create aggregate output'''
+    df_ddthreshold2 = pd.DataFrame(lili2, columns=['security', 'start_index', 'end_index', 'start_date',
+                                                   'end_date', 'start_value', 'end_value', 'pct_chg'])
+    df_ddthreshold2 = df_ddthreshold2[['security', 'start_index', 'end_index', 'start_date',
+                                       'end_date', 'start_value', 'end_value', 'pct_chg']]
+    df_ddthreshold2.drop_duplicates(inplace=True)
+    df_ddthreshold2.sort_values(by=['security', 'pct_chg'], inplace=True, ascending=[True, True])
+    wb.sheets(sumsheet).range(1, 1).value = df_ddthreshold2
+    return 1
